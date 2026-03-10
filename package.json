@@ -1,0 +1,106 @@
+{
+  "name": "@uchibeke/myway",
+  "version": "0.1.0",
+  "description": "Self-hosted personal AI app with agent guardrails — tasks, briefings, file browser, and a live feed of every action your AI takes.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uchibeke/myway.git"
+  },
+  "homepage": "https://github.com/uchibeke/myway",
+  "keywords": [
+    "ai",
+    "agent",
+    "guardrails",
+    "aport",
+    "openclaw",
+    "nextjs",
+    "self-hosted"
+  ],
+  "bin": {
+    "myway": "./bin/myway"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "public/",
+    "scripts/",
+    ".env.local.example",
+    "ecosystem.config.cjs.example",
+    "next.config.ts",
+    "next-env.d.ts",
+    "tsconfig.json",
+    "tsconfig.scripts.json",
+    "postcss.config.mjs",
+    "eslint.config.mjs",
+    "yarn.lock",
+    "README.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    ".nvmrc"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "xlsx": "$xlsx"
+  },
+  "scripts": {
+    "dev": "next dev --port 48291",
+    "build": "next build",
+    "start": "next start --port 48291",
+    "db:init": "tsx --tsconfig tsconfig.scripts.json scripts/db-init.ts",
+    "db:status": "tsx --tsconfig tsconfig.scripts.json scripts/db-status.ts",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:api": "bash tests/api/test-guardrails-api.sh",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-python": "^6.2.1",
+    "@google/genai": "^1.44.0",
+    "@tailwindcss/typography": "^0.5.19",
+    "@uiw/react-codemirror": "^4.25.4",
+    "better-sqlite3": "^9.6.0",
+    "cron-parser": "^5.5.0",
+    "googleapis": "^171.4.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.574.0",
+    "mammoth": "^1.11.0",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "sqlite-vec": "^0.1.6",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.4",
+    "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jszip": "^3.4.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9.39.3",
+    "eslint-config-next": "^16.1.6",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "vitest": "^4.0.18"
+  },
+  "resolutions": {
+    "sqlite-vec-linux-arm64": "0.1.7-alpha.10"
+  }
+}

@@ -1,0 +1,377 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Myway — Interactive Setup
+#
+# Usage:
+#   npx @uchibeke/myway              # scaffold in ./myway
+#   npx @uchibeke/myway my-app       # scaffold in ./my-app
+#   npx @uchibeke/myway --setup      # configure existing install (run from myway dir)
+#
+# What it does:
+#   1. Scaffolds a new Myway directory (or configures an existing one)
+#   2. Installs dependencies
+#   3. Prompts for required configuration
+#   4. Generates secrets
+#   5. Initializes the database
+#   6. Builds for production
+#   7. Optionally starts the server
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─── Resolve script location (follows symlinks — required for npx) ──────────
+
+SCRIPT_PATH="${BASH_SOURCE[0]:-.}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+  TARGET="$(readlink "$SCRIPT_PATH")"
+  if [[ "$TARGET" == /* ]]; then SCRIPT_PATH="$TARGET"
+  else SCRIPT_PATH="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)/$TARGET"; fi
+done
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ─── Source shared library ──────────────────────────────────────────────────
+
+source "$SCRIPT_DIR/lib/common.sh"
+
+# ─── Parse arguments ───────────────────────────────────────────────────────
+
+SETUP_ONLY=false
+TARGET_DIR=""
+START_AFTER=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --setup)  SETUP_ONLY=true ;;
+    --start)  START_AFTER=true ;;
+    --help|-h)
+      echo "Usage: npx @uchibeke/myway [directory] [--setup] [--start]"
+      echo ""
+      echo "  directory    Create Myway in this directory (default: ./myway)"
+      echo "  --setup      Configure an existing Myway install (skip scaffold)"
+      echo "  --start      Start the server after setup"
+      echo ""
+      echo "Required: Node.js 22+, AI backend (OpenClaw or any OpenAI-compatible API)"
+      echo "Optional: APort agent guardrails (npx @aporthq/aport-agent-guardrails)"
+      exit 0
+      ;;
+    -*) log_error "Unknown flag: $arg"; exit 1 ;;
+    *)  TARGET_DIR="$arg" ;;
+  esac
+done
+
+# ─── Banner ─────────────────────────────────────────────────────────────────
+
+echo ""
+echo -e "${BOLD}  ┌─────────────────────────────────────────┐${RESET}"
+echo -e "${BOLD}  │            Myway Setup                   │${RESET}"
+echo -e "${BOLD}  │   Self-hosted personal AI app            │${RESET}"
+echo -e "${BOLD}  └─────────────────────────────────────────┘${RESET}"
+echo ""
+
+# ─── Prerequisites ──────────────────────────────────────────────────────────
+
+require_cmd node "Node.js is required. Install Node 22+ from https://nodejs.org" || exit 1
+require_cmd yarn "yarn is required. Install: npm install -g yarn" || exit 1
+
+NODE_VERSION="$(node -v | sed 's/v//' | cut -d. -f1)"
+if (( NODE_VERSION < 22 )); then
+  log_error "Node.js 22+ required (found v${NODE_VERSION}). Update: https://nodejs.org"
+  exit 1
+fi
+log_info "Node.js v$(node -v | sed 's/v//') detected"
+
+# ─── Determine working directory ────────────────────────────────────────────
+
+is_myway_dir() {
+  [[ -f "$1/package.json" ]] && grep -q '"@uchibeke/myway"' "$1/package.json" 2>/dev/null
+}
+
+if $SETUP_ONLY; then
+  # --setup: must be in an existing myway directory
+  if is_myway_dir "."; then
+    WORK_DIR="$(pwd)"
+  else
+    log_error "Not in a Myway directory. Run without --setup to scaffold a new one."
+    exit 1
+  fi
+elif is_myway_dir "."; then
+  # Already in a myway directory — configure in place
+  WORK_DIR="$(pwd)"
+  log_info "Detected existing Myway installation"
+elif [[ -n "$TARGET_DIR" ]]; then
+  WORK_DIR="$(pwd)/$TARGET_DIR"
+else
+  WORK_DIR="$(pwd)/myway"
+fi
+
+# ─── Scaffold (if not in an existing Myway dir) ────────────────────────────
+
+if ! is_myway_dir "$WORK_DIR"; then
+  log_step "Scaffolding Myway → $WORK_DIR"
+
+  if [[ -d "$WORK_DIR" ]] && [[ "$(ls -A "$WORK_DIR" 2>/dev/null)" ]]; then
+    log_error "Directory $WORK_DIR already exists and is not empty."
+    exit 1
+  fi
+
+  mkdir -p "$WORK_DIR"
+
+  # Copy app files from the npm package
+  # Exclude: node_modules, .next, .git, .env*, databases, logs, bin
+  if command -v rsync &>/dev/null; then
+    rsync -a --quiet \
+      --exclude 'node_modules' \
+      --exclude '.next' \
+      --exclude '.git' \
+      --exclude '.env.local' \
+      --exclude '*.db' \
+      --exclude '*.db-journal' \
+      --exclude 'logs/' \
+      --exclude 'bin/' \
+      --exclude '.DS_Store' \
+      "$PACKAGE_ROOT/" "$WORK_DIR/"
+  else
+    cp -R "$PACKAGE_ROOT/." "$WORK_DIR/"
+    # Clean up files that shouldn't be in the scaffold
+    rm -rf "$WORK_DIR"/{node_modules,.next,.git,.env.local,bin,logs} \
+           "$WORK_DIR"/*.db "$WORK_DIR"/*.db-journal 2>/dev/null || true
+  fi
+
+  log_info "Files copied"
+fi
+
+cd "$WORK_DIR"
+
+# ─── Install dependencies ──────────────────────────────────────────────────
+
+if [[ ! -d "node_modules" ]]; then
+  log_step "Installing dependencies (this may take a few minutes)..."
+  yarn install
+  log_info "Dependencies installed"
+else
+  log_info "Dependencies already installed"
+fi
+
+# ─── Interactive configuration ──────────────────────────────────────────────
+
+ENV_FILE="$WORK_DIR/.env.local"
+NEEDS_CONFIG=true
+
+if [[ -f "$ENV_FILE" ]]; then
+  log_info "Found existing .env.local"
+  if ! prompt_yn "Reconfigure environment variables?"; then
+    NEEDS_CONFIG=false
+  fi
+fi
+
+if $NEEDS_CONFIG; then
+  log_step "Configuration"
+
+  # ── Files app: MYWAY_ROOT ───────────────────────────────────────────────
+  echo ""
+  echo -e "  ${BOLD}Files App${RESET}"
+  echo -e "  ${DIM}Myway includes a file browser. Choose a directory on this machine${RESET}"
+  echo -e "  ${DIM}that Myway can read and manage (notes, documents, etc.).${RESET}"
+  echo ""
+  DEFAULT_ROOT="${HOME}/vault"
+  prompt_value "Directory path" "$DEFAULT_ROOT"
+  MYWAY_ROOT="$REPLY"
+
+  # Expand ~ to $HOME
+  MYWAY_ROOT="${MYWAY_ROOT/#\~/$HOME}"
+
+  if [[ ! -d "$MYWAY_ROOT" ]]; then
+    if prompt_yn "Directory $MYWAY_ROOT doesn't exist. Create it?" "y"; then
+      mkdir -p "$MYWAY_ROOT"
+      log_info "Created $MYWAY_ROOT"
+    fi
+  fi
+
+  # ── AI Backend selection ────────────────────────────────────────────────
+  echo ""
+  echo -e "  ${BOLD}AI Backend${RESET}"
+  echo -e "  ${DIM}Myway needs an AI model to power conversations, briefings, and tasks.${RESET}"
+  echo -e "  ${DIM}Choose how to connect to one:${RESET}"
+  echo ""
+  echo -e "  ${CYAN}1${RESET}) OpenClaw — local AI gateway (if you have OpenClaw installed)"
+  echo -e "  ${CYAN}2${RESET}) BYOK — Bring Your Own Key (OpenAI, OpenRouter, Ollama, Gemini, etc.)"
+  echo ""
+  echo -en "  Choose [1/2]: "
+  read -r AI_CHOICE
+  AI_CHOICE="${AI_CHOICE:-1}"
+
+  AI_MODE="openclaw"
+  OPENCLAW_BASE_URL=""
+  OPENCLAW_GATEWAY_TOKEN=""
+  MYWAY_AI_BASE_URL=""
+  MYWAY_AI_TOKEN=""
+  MYWAY_AI_MODEL=""
+
+  if [[ "$AI_CHOICE" == "2" ]]; then
+    AI_MODE="byok"
+    echo ""
+    echo -e "  ${DIM}Enter your AI provider's OpenAI-compatible base URL.${RESET}"
+    echo -e "  ${DIM}Examples:${RESET}"
+    echo -e "  ${DIM}  Ollama (local):  http://localhost:11434/v1${RESET}"
+    echo -e "  ${DIM}  OpenAI:          https://api.openai.com/v1${RESET}"
+    echo -e "  ${DIM}  Gemini:          https://generativelanguage.googleapis.com/v1beta/openai${RESET}"
+    echo -e "  ${DIM}  OpenRouter:      https://openrouter.ai/api/v1${RESET}"
+    echo -e "  ${DIM}  Together:        https://api.together.xyz/v1${RESET}"
+    echo ""
+    prompt_value "API base URL" ""
+    MYWAY_AI_BASE_URL="$REPLY"
+
+    if [[ -z "$MYWAY_AI_BASE_URL" ]]; then
+      log_error "Base URL is required for BYOK mode."
+      exit 1
+    fi
+
+    echo ""
+    echo -e "  ${DIM}Your API key from the provider above. Leave blank for Ollama (no key needed).${RESET}"
+    prompt_value "API key" ""
+    MYWAY_AI_TOKEN="$REPLY"
+
+    echo ""
+    echo -e "  ${DIM}Which model to use (e.g. gpt-4o, gemini-2.0-flash, llama3). Leave blank for provider default.${RESET}"
+    prompt_value "Model (optional)" ""
+    MYWAY_AI_MODEL="$REPLY"
+  else
+    # OpenClaw mode
+    echo ""
+    echo -e "  ${DIM}URL where your OpenClaw gateway is running.${RESET}"
+    DEFAULT_OC_URL="http://localhost:18789"
+    prompt_value "OpenClaw gateway URL" "$DEFAULT_OC_URL"
+    OPENCLAW_BASE_URL="$REPLY"
+
+    echo ""
+    echo -e "  ${DIM}If your gateway requires auth, enter the token. Leave blank if running${RESET}"
+    echo -e "  ${DIM}on loopback (localhost) without auth — most local setups don't need one.${RESET}"
+    prompt_value "OpenClaw gateway token (optional)" ""
+    OPENCLAW_GATEWAY_TOKEN="$REPLY"
+  fi
+
+  # ── Auto-generated: MYWAY_SECRET ──────────────────────────────────────
+  MYWAY_SECRET="$(generate_hex 32)"
+  log_info "Generated encryption key (stored in .env.local)"
+
+  # ── Optional: PORT ─────────────────────────────────────────────────────
+  echo ""
+  echo -e "  ${BOLD}Server${RESET}"
+  echo -e "  ${DIM}Which port should Myway run on?${RESET}"
+  prompt_value "Port" "48291"
+  PORT="$REPLY"
+
+  # ── Write .env.local ───────────────────────────────────────────────────
+  log_step "Writing .env.local"
+
+  cat > "$ENV_FILE" <<ENVEOF
+# ─────────────────────────────────────────────────────────────────────────────
+# Myway — Generated by setup wizard
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Server
+PORT=${PORT}
+ENVEOF
+
+  cat >> "$ENV_FILE" <<ENVEOF
+
+# ── File System
+MYWAY_ROOT=${MYWAY_ROOT}
+ENVEOF
+
+  if [[ "$AI_MODE" == "byok" ]]; then
+    cat >> "$ENV_FILE" <<ENVEOF
+
+# ── AI Backend (BYOK — Bring Your Own Key)
+MYWAY_AI_BASE_URL=${MYWAY_AI_BASE_URL}
+ENVEOF
+    if [[ -n "$MYWAY_AI_TOKEN" ]]; then
+      echo "MYWAY_AI_TOKEN=${MYWAY_AI_TOKEN}" >> "$ENV_FILE"
+    else
+      echo "# MYWAY_AI_TOKEN=  # not needed for Ollama" >> "$ENV_FILE"
+    fi
+    if [[ -n "$MYWAY_AI_MODEL" ]]; then
+      echo "MYWAY_AI_MODEL=${MYWAY_AI_MODEL}" >> "$ENV_FILE"
+    else
+      echo "# MYWAY_AI_MODEL=  # optional — uses provider default" >> "$ENV_FILE"
+    fi
+  else
+    cat >> "$ENV_FILE" <<ENVEOF
+
+# ── OpenClaw Integration
+OPENCLAW_BASE_URL=${OPENCLAW_BASE_URL}
+ENVEOF
+    if [[ -n "$OPENCLAW_GATEWAY_TOKEN" ]]; then
+      echo "OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}" >> "$ENV_FILE"
+    else
+      echo "# OPENCLAW_GATEWAY_TOKEN=  # set if your gateway requires auth" >> "$ENV_FILE"
+    fi
+  fi
+
+  cat >> "$ENV_FILE" <<ENVEOF
+
+# ── Encryption (auto-generated — do not share)
+MYWAY_SECRET=${MYWAY_SECRET}
+
+# ── See .env.local.example for all available options:
+#    Google OAuth, Telegram, TTS providers, APort guardrails, etc.
+ENVEOF
+
+  chmod 600 "$ENV_FILE"
+  log_info ".env.local written (permissions: 600)"
+fi
+
+# ─── Initialize database ───────────────────────────────────────────────────
+
+log_step "Initializing database..."
+yarn db:init
+log_info "Database ready"
+
+# ─── Build ──────────────────────────────────────────────────────────────────
+
+log_step "Building for production (this may take a few minutes)..."
+yarn build
+log_info "Build complete"
+
+# ─── APort guardrails (optional) ───────────────────────────────────────────
+
+echo ""
+if prompt_yn "Set up APort agent guardrails? (recommended)" "y"; then
+  log_step "Running APort setup..."
+  npx @aporthq/aport-agent-guardrails || {
+    log_warn "APort setup skipped or failed. You can run it later:"
+    log_dim "npx @aporthq/aport-agent-guardrails"
+  }
+fi
+
+# ─── Start server ───────────────────────────────────────────────────────────
+
+echo ""
+echo -e "${BOLD}  ┌─────────────────────────────────────────┐${RESET}"
+echo -e "${BOLD}  │           Setup complete!                │${RESET}"
+echo -e "${BOLD}  └─────────────────────────────────────────┘${RESET}"
+echo ""
+log_info "Myway is ready at ${CYAN}http://localhost:${PORT}${RESET}"
+echo ""
+
+if $START_AFTER; then
+  log_step "Starting Myway..."
+  exec yarn start
+fi
+
+echo -e "  ${BOLD}Next steps:${RESET}"
+echo ""
+echo -e "  ${CYAN}cd $(basename "$WORK_DIR")${RESET}"
+echo -e "  ${CYAN}yarn start${RESET}                       # start the server"
+echo ""
+echo -e "  ${DIM}Or with PM2 (process manager):${RESET}"
+echo -e "  ${CYAN}cp ecosystem.config.cjs.example ecosystem.config.cjs${RESET}"
+echo -e "  ${CYAN}pm2 start ecosystem.config.cjs${RESET}"
+echo ""
+echo -e "  ${DIM}Optional integrations:${RESET}"
+echo -e "  ${DIM}  Google Calendar/Gmail — add GOOGLE_CLIENT_ID + SECRET to .env.local${RESET}"
+echo -e "  ${DIM}  Telegram delivery    — add TELEGRAM_BOT_TOKEN to .env.local${RESET}"
+echo -e "  ${DIM}  TTS voice output     — add LMNT/ElevenLabs API keys to .env.local${RESET}"
+echo -e "  ${DIM}  See .env.local.example for all options${RESET}"
+echo ""

@@ -1,0 +1,37 @@
+/**
+ * Private Apps — not shipped with the open-source release.
+ *
+ * This file is .gitignored. To add your own private apps to Myway:
+ *  1. Copy this file to src/lib/apps-private.ts
+ *  2. Add your app entries to the PRIVATE_APPS array
+ *  3. If interactionType is 'tool', create a page at src/app/apps/<slug>/page.tsx
+ *  4. Create a SKILL.md at ~/.openclaw/workspace/skills/<slug>/SKILL.md
+ *
+ * Private apps are loaded at startup and merged into the app registry.
+ * They behave identically to public apps but are excluded from the
+ * open-source distribution.
+ */
+
+import type { MywayApp } from './apps'
+
+export const PRIVATE_APPS: MywayApp[] = [
+  // Example:
+  // {
+  //   id: 'my-private-app',
+  //   name: 'My Private App',
+  //   description: 'A private app only I can see.',
+  //   icon: '🔒',
+  //   color: 'bg-zinc-700',
+  //   route: '/apps/my-private-app',
+  //   live: true,
+  //   isPrivate: true,
+  //   category: 'utility',
+  //   interactionType: 'chat',      // or 'transformer', 'button', 'tool'
+  //   skill: { slug: 'my-private-app' },
+  //   identity: {
+  //     goal: 'Do something useful privately',
+  //     personality: ['Helpful', 'Direct'],
+  //   },
+  //   autonomy: { ambient: false },
+  // },
+]

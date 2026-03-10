@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Type check
+        run: yarn tsc --noEmit
+
+      - name: Run unit tests (vitest — no server needed)
+        run: yarn test --run
+
+      - name: Build (production)
+        run: yarn build
+        env:
+          MYWAY_ROOT: /tmp/myway-ci-root
+          MYWAY_SECRET: ci-test-secret-not-used-in-production
+          OPENCLAW_BASE_URL: http://localhost:18789
+          OPENCLAW_GATEWAY_TOKEN: ci-token
+          NODE_ENV: production
+
+      - name: Prepare integration test environment
+        run: mkdir -p /tmp/myway-ci-root
+
+      - name: Initialize database
+        run: yarn db:init
+        env:
+          MYWAY_DB_PATH: /tmp/myway-ci-root/myway.db
+
+      - name: Start server for integration tests
+        run: |
+          yarn start &
+          echo $! > /tmp/myway-server.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:48291/api/health >/dev/null 2>&1; then
+              echo "Server ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+        env:
+          MYWAY_ROOT: /tmp/myway-ci-root
+          MYWAY_SECRET: ci-test-secret-not-used-in-production
+          OPENCLAW_BASE_URL: http://localhost:18789
+          OPENCLAW_GATEWAY_TOKEN: ci-token
+          MYWAY_DB_PATH: /tmp/myway-ci-root/myway.db
+          PORT: 48291
+          NODE_ENV: production
+
+      - name: Run API integration tests (shell — requires live server)
+        run: yarn test:api
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/myway-server.pid ]; then
+            kill "$(cat /tmp/myway-server.pid)" 2>/dev/null || true
+          fi

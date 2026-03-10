@@ -1,0 +1,1 @@
+ALTER TABLE pipeline_runs ADD COLUMN available_cash INTEGER NOT NULL DEFAULT 100000;

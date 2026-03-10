@@ -1,0 +1,462 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+:root {
+  --brand-primary: #2563eb;
+  --brand-primary-rgb: 37 99 235;
+  --brand-bg: #09090b;
+  --brand-bg-rgb: 9 9 11;
+  --brand-fg: #fafafa;
+  --background: var(--brand-bg);
+  --foreground: var(--brand-fg);
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+
+  /* Safe area insets — resolved by the browser on devices with notch/home indicator.
+   * viewport-fit=cover (set in layout.tsx) is required for these to be non-zero.
+   * Fallback to 0px on desktop/non-notch devices.
+   *
+   * Apple HIG: Interactive controls must be at least 44pt from screen edges.
+   * env(safe-area-inset-bottom) is 34px on Face ID iPhones (home indicator).
+   * We add an extra 8px padding beyond the inset so tappable targets like TTS
+   * buttons aren't flush against the home indicator swipe zone.
+   */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/*
+ * Safe area utilities.
+ *
+ * .pt-safe — padding-top equal to the top safe area inset (notch / Dynamic Island)
+ * .pb-safe — padding-bottom equal to the bottom safe area inset (home indicator)
+ *
+ * These stack with Tailwind spacing: `pb-safe pb-6` gives inset + 24px.
+ * On non-notch devices the inset is 0px so only the Tailwind class applies.
+ */
+.pt-safe { padding-top: var(--sat); }
+.pb-safe { padding-bottom: var(--sab); }
+.pl-safe { padding-left: var(--sal); }
+.pr-safe { padding-right: var(--sar); }
+
+/*
+ * App header safe-area top padding.
+ *
+ * Mobile: safe area inset + 12px breathing room beneath the notch / status bar.
+ *   - On notch iPhones: ~47px inset + 12px = ~59px (content clears Dynamic Island)
+ *   - On non-notch phones: 0px inset + 12px = 12px (tight but correct — status bar is outside viewport)
+ *
+ * Desktop (phone card): no notch — 16px so the header sits cleanly inside the rounded card top.
+ */
+.app-header-top {
+  padding-top: calc(var(--sat) + 12px);
+}
+@media (min-width: 768px) {
+  .app-header-top {
+    padding-top: 16px;
+  }
+}
+
+/*
+ * App footer safe-area bottom padding.
+ *
+ * Mobile: safe area inset + 24px.
+ *   - On home-indicator iPhones: ~34px inset + 24px = ~58px (thumb-friendly, clears swipe zone)
+ *   - On non-indicator phones: 0px + 24px = 24px
+ *
+ * Desktop (phone card): just 24px — no inset needed.
+ *
+ * Apple HIG §Layout: "In general, place interactive controls in the bottom third of
+ * the screen and away from the edges. Make sure the Home indicator doesn't obscure
+ * the content or controls at the bottom of the screen."
+ */
+.app-footer-bottom {
+  padding-bottom: calc(var(--sab) + 24px);
+}
+@media (min-width: 768px) {
+  .app-footer-bottom {
+    padding-bottom: 24px;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Remove tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/**
+ * Mobile input zoom prevention.
+ * iOS Safari auto-zooms when an input/textarea has font-size < 16px.
+ * Setting font-size: 16px prevents this without disabling user zoom.
+ * Individual components may override with larger sizes.
+ */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+/**
+ * Prevent double-tap zoom on interactive elements.
+ * touch-action: manipulation disables the 300ms tap delay and double-tap zoom
+ * while still allowing single-tap, scroll, and pinch-zoom on the page.
+ */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Hide scrollbars but keep scroll functionality */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/**
+ * View Transitions — instant visual feedback, no perceived network latency.
+ *
+ * How this works (Next.js experimental.viewTransition: true):
+ *   1. User clicks a Link → browser IMMEDIATELY captures current page as screenshot
+ *   2. ::view-transition-old(root) starts animating the screenshot (instant feedback!)
+ *   3. React renders the new page (happens with whatever latency it takes)
+ *   4. ::view-transition-new(root) animates the new content in
+ *
+ * The user sees immediate response to their tap even over a slow Cloudflare tunnel.
+ *
+ * Research basis:
+ *   - Exit: 220ms cubic-bezier(0.4, 0, 1, 1) — fast ease-in (NNg: exits faster than entries)
+ *   - Enter: 300ms cubic-bezier(0.16, 1, 0.3, 1) — spring ease-out (NNg: 200-400ms range)
+ *   - Subtle Y translate (8px) signals directionality without being heavy or iOS-slide literal
+ */
+@keyframes vt-exit {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
+@keyframes vt-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+::view-transition-old(root) {
+  animation: 220ms cubic-bezier(0.4, 0, 1, 1) both vt-exit;
+}
+
+::view-transition-new(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both vt-enter;
+}
+
+/* Respect reduced-motion — browser also does this natively for view transitions */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+/**
+ * Compliment Avalanche — each item falls in from above with a spring easing.
+ * Used by AvalancheOutput component for apps with responseAnimation: 'avalanche'.
+ * Each item has a staggered animationDelay set inline (250ms per item).
+ */
+@keyframes avalanche-fall {
+  from {
+    opacity: 0;
+    transform: translateY(-28px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-avalanche-fall {
+  animation: avalanche-fall 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-avalanche-fall {
+    animation: none;
+  }
+}
+
+/**
+ * Thinking indicator — breathing animation.
+ *
+ * Psychology: mimics coherent human breathing (~25 breaths/min — slightly
+ * elevated, suggesting active thought). Equal inhale/exhale ratio activates
+ * parasympathetic calm in the observer. The wave stagger across dots creates
+ * a sense of flowing attention — something alive is here, working for you.
+ *
+ * Dots: scale 0.5→1 + opacity 0.3→1 over 2.4s, staggered 400ms apart.
+ * Cursor: gentle opacity + height pulse over 3s (slower = steady presence).
+ */
+@keyframes breathe-dot {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes breathe-cursor {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scaleY(0.8);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scaleY(1);
+  }
+}
+
+.animate-breathe-dot {
+  animation: breathe-dot 2.4s ease-in-out infinite;
+}
+
+.animate-breathe-cursor {
+  animation: breathe-cursor 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-breathe-dot,
+  .animate-breathe-cursor {
+    animation: none;
+  }
+}
+
+/**
+ * Dock enter/exit — smooth show/hide when toggling All Apps.
+ * dock-enter: slides up from below + fades in (300ms spring)
+ * dock-exit: shrinks down + fades out (200ms ease-in)
+ */
+@keyframes dock-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dock-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+.animate-dock-enter {
+  animation: dock-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-dock-exit {
+  animation: dock-exit 200ms ease-in both;
+}
+
+/**
+ * Spaces expand/collapse — CSS grid height trick for smooth animation.
+ * grid-template-rows transitions from 0fr to 1fr for natural height animation.
+ */
+.spaces-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  /* Collapse: fast ease-in — content shrinks quickly, no lingering tail */
+  transition: grid-template-rows 250ms cubic-bezier(0.4, 0, 1, 1), opacity 200ms ease-in;
+  opacity: 0;
+}
+
+.spaces-grid.spaces-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  /* Expand: spring ease-out — bouncy, satisfying open */
+  transition: grid-template-rows 350ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease-out;
+}
+
+.spaces-grid-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-dock-enter,
+  .animate-dock-exit {
+    animation: none;
+  }
+  .spaces-grid {
+    transition: none;
+  }
+}
+
+/**
+ * Fallback: @starting-style fade-in for browsers without View Transitions API.
+ * Fires automatically on DOM insertion — no JS or class needed.
+ * Baseline Newly Available since August 2024 (~86% coverage).
+ * The .page-enter class is kept but only applied in the fallback block.
+ */
+/* Brightness slider — vertical range input styling */
+.brightness-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  width: 28px;
+}
+
+.brightness-slider::-webkit-slider-runnable-track {
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(to top, rgba(129, 140, 248, 0.2), rgba(129, 140, 248, 0.5));
+  border-radius: 2px;
+}
+
+.brightness-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgb(129, 140, 248);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 8px rgba(129, 140, 248, 0.4);
+  margin-left: -6px;
+}
+
+.brightness-slider::-moz-range-track {
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(to top, rgba(129, 140, 248, 0.2), rgba(129, 140, 248, 0.5));
+  border-radius: 2px;
+}
+
+.brightness-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgb(129, 140, 248);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 8px rgba(129, 140, 248, 0.4);
+}
+
+@supports not selector(::view-transition) {
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  .page-enter {
+    animation: page-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+/* ─── Voice input animations ───────────────────────────────────────────────── */
+
+@keyframes voice-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes voice-orb-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes voice-orb-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes voice-ring-expand {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+.voice-orb-idle {
+  animation: voice-orb-breathe 3s ease-in-out infinite;
+}
+
+.voice-orb-active {
+  animation: voice-orb-pulse 1.5s ease-in-out infinite;
+}
+
+.voice-ring-outer {
+  animation: voice-ring-expand 2s ease-out infinite;
+}
+
+.voice-ring-inner {
+  animation: voice-ring-expand 2s ease-out infinite 0.5s;
+}
+
+.voice-pulse {
+  animation: voice-orb-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-orb-idle,
+  .voice-orb-active,
+  .voice-ring-outer,
+  .voice-ring-inner,
+  .voice-pulse {
+    animation: none;
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://docs.npmjs.com/cli/v10/configuring-npm/npm-audit#config",
+  "allowlist": {
+    "xlsx": {
+      "reason": "Only used for local file preview (MYWAY_ROOT). Affected functions (sheet_add_json) are not called. ReDoS risk is limited to parsing the user's own local files."
+    }
+  }
+}

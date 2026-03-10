@@ -4,8 +4,9 @@ name: Release
 #   git tag v0.2.0 && git push origin v0.2.0
 #
 # Steps:
-#   1. Run full test suite and production build
-#   2. Create a GitHub Release with auto-generated notes
+#   1. Run tests and verify version matches tag
+#   2. Publish to npm (@uchibeke/myway)
+#   3. Create a GitHub Release with auto-generated notes
 
 on:
   push:
@@ -13,8 +14,8 @@ on:
       - 'v*'
 
 jobs:
-  verify:
-    name: Test & Build
+  publish-npm:
+    name: Publish to npm
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
           cache: 'yarn'
 
       - name: Install dependencies
@@ -39,11 +41,11 @@ jobs:
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "❌ Version mismatch: tag is v$TAG_VERSION but package.json has $PKG_VERSION"
-            echo "   Run: yarn version --new-version $TAG_VERSION --no-git-tag-version, commit, then retag."
+            echo "Version mismatch: tag is v$TAG_VERSION but package.json has $PKG_VERSION"
+            echo "Run: yarn version --new-version $TAG_VERSION --no-git-tag-version, commit, then retag."
             exit 1
           fi
-          echo "✅ Version OK: $TAG_VERSION"
+          echo "Version OK: $TAG_VERSION"
 
       - name: Build (production)
         run: yarn build
@@ -54,9 +56,14 @@ jobs:
           OPENCLAW_GATEWAY_TOKEN: ci-token
           NODE_ENV: production
 
-  release:
+      - name: Publish to npm (public)
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  create-release:
     name: Create GitHub Release
-    needs: verify
+    needs: publish-npm
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -78,27 +85,20 @@ jobs:
             --title "Myway $TAG" \
             --notes "## $TAG
 
-          ### Setup
+          ### Install
 
+          \`\`\`bash
+          npx @uchibeke/myway
+          \`\`\`
+
+          Or clone and set up manually:
           \`\`\`bash
           git clone https://github.com/uchibeke/myway && cd myway && yarn install && yarn build && cp .env.local.example .env.local
           \`\`\`
-          Then edit \`.env.local\` with your values and start with:
-          \`\`\`bash
-          pm2 start ecosystem.config.cjs
-          \`\`\`
 
           ### What's in Myway
-          - 🛡️ **Guardrails app** — live feed of every agent action from APort
-          - ✅ **Tasks** — AI task management with MIT tracking
-          - 📋 **Briefings** — morning brief, evening recap, weekly review
-          - 🍲 **Mise** — recipe vault with dinner suggestions
-          - 📁 **Files** — browser and editor for your server
-          - 🌙 **Somni** — AI-generated bedtime stories
-          - 🎤 **Roast Me**, 🎭 **Drama Mode**, 🔮 **Decode** and more
-
-          ### APort Guardrails
-          Myway ships with [APort agent guardrails](https://github.com/aporthq/aport-agent-guardrails) integration.
-          See the Guardrails app (🛡️) for a live feed of every action your AI agent takes.
+          - AI-powered personal OS with agent guardrails
+          - Tasks, Briefings, Mise (recipes), Files, Somni, and more
+          - Live feed of every action your AI agent takes (APort)
 
           See [README](https://github.com/uchibeke/myway#readme) for full setup instructions."

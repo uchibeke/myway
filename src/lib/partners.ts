@@ -163,7 +163,7 @@ export function validatePartnerToken(
   const partners = loadPartners()
   const partner = partners.get(payload.partnerId.toLowerCase())
   if (!partner) {
-    return { valid: false, error: `Unknown partner: ${payload.partnerId}` }
+    return { valid: false, error: 'Invalid token' }
   }
 
   // 5. Verify referer domain (if provided and partner has allowedDomains)

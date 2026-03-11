@@ -74,32 +74,42 @@ Built on [APort agent guardrails](https://github.com/aporthq/aport-agent-guardra
 
 ### Option A — npx (recommended)
 
+Interactive setup:
+
 ```bash
 npx @uchibeke/myway
 ```
 
-This interactive wizard will:
-1. Scaffold a new Myway directory
-2. Install dependencies
-3. Prompt for your OpenClaw gateway URL and token
-4. Generate encryption keys automatically
-5. Initialize the database
-6. Build for production
-7. Optionally set up [APort agent guardrails](https://github.com/aporthq/aport-agent-guardrails)
+The wizard scaffolds a new directory, installs dependencies, prompts for your AI backend (OpenClaw or BYOK), generates secrets, builds for production, and offers to start the server. When it starts, it auto-opens your browser.
 
-You can also specify a directory name and auto-start:
+Non-interactive setup (for scripts, agents, CI):
+
+```bash
+# With OpenClaw
+npx @uchibeke/myway my-app --ai-mode openclaw --start
+
+# With your own API key (BYOK)
+npx @uchibeke/myway my-app \
+  --ai-mode byok \
+  --ai-url https://api.openai.com/v1 \
+  --ai-key sk-your-key \
+  --ai-model gpt-4o \
+  --start
+```
+
+Other options:
 
 ```bash
 npx @uchibeke/myway my-app          # scaffold in ./my-app
-npx @uchibeke/myway --start         # start the server after setup
 npx @uchibeke/myway --setup         # reconfigure an existing install
+npx @uchibeke/myway --help          # see all flags
 ```
 
 ### Option B — git clone
 
 ```bash
 git clone https://github.com/uchibeke/myway && cd myway
-npm install
+yarn install
 cp .env.local.example .env.local
 ```
 
@@ -125,9 +135,9 @@ OPENCLAW_GATEWAY_TOKEN=your_token   # from: openclaw gateway status
 Initialize and start:
 
 ```bash
-npm run db:init          # create SQLite database (first run only)
-npm run build            # production build
-npm start                # start on port 48291
+yarn db:init             # create SQLite database (first run only)
+yarn build               # production build
+yarn start               # start on port 48291
 ```
 
 Or with PM2 (install globally first: `npm install -g pm2`):
@@ -340,11 +350,11 @@ For deploying Myway as a public service. Self-hosted users can ignore this secti
 ## Development
 
 ```bash
-npm run dev          # Next.js dev server on :48291
-npm test             # Run unit tests (vitest)
-npm run test:coverage # Tests with coverage report
-npm run db:init      # (Re)initialise the database
-npm run db:status    # Show table row counts
+yarn dev             # Next.js dev server on :48291
+yarn test            # Run unit tests (vitest)
+yarn test:coverage   # Tests with coverage report
+yarn db:init         # (Re)initialise the database
+yarn db:status       # Show table row counts
 ```
 
 ---
@@ -400,7 +410,7 @@ Each app has an `interactionType` that maps to a shell:
 
 **Unit tests** — modules only, no server needed:
 ```bash
-npm test -- --run
+yarn test --run
 ```
 ```
 Test Files: 8 passed
@@ -410,7 +420,7 @@ Tests:      65 passed
 **API integration tests** — runs against a live server:
 ```bash
 # Start Myway first, then:
-npm run test:api
+yarn test:api
 ```
 ```
 Results: 10/10 passed

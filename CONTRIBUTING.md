@@ -5,18 +5,18 @@ Thanks for your interest in contributing. This guide covers setup, conventions, 
 ## Prerequisites
 
 - **Node.js 22+** (see `.nvmrc` — run `nvm use` to auto-select)
-- **npm** (ships with Node)
-- **OpenClaw** running locally (for chat/briefing features) — [openclaw.ai](https://openclaw.ai)
+- **yarn** — install with `npm install -g yarn`
+- **AI backend** — either [OpenClaw](https://openclaw.ai) running locally, or any OpenAI-compatible API key (see [BYOK docs](docs/byok.md))
 - **APort guardrails** (optional) — `npx @aporthq/aport-agent-guardrails`
 
 ## Local Setup
 
 ```bash
 git clone https://github.com/uchibeke/myway && cd myway
-npm install
+yarn install
 cp .env.local.example .env.local   # fill in your values
-npm run db:init                     # create SQLite database
-npm run dev                         # dev server on http://localhost:48291
+yarn db:init                        # create SQLite database
+yarn dev                            # dev server on http://localhost:48291
 ```
 
 ## Project Structure
@@ -64,9 +64,9 @@ src/
 ## Running Tests
 
 ```bash
-npm test              # unit tests (vitest)
-npm run test:coverage # with coverage report
-npm run test:api      # API integration tests (needs running server)
+yarn test             # unit tests (vitest)
+yarn test:coverage    # with coverage report
+yarn test:api         # API integration tests (needs running server)
 ```
 
 Tests live in `__tests__/` at the repo root. When adding new modules, add corresponding tests.
@@ -93,7 +93,7 @@ Use conventional commit style:
 1. Fork the repo and create a branch from `main`
 2. Make your changes with tests where applicable
 3. Run `npx tsc --noEmit` to verify types
-4. Run `npm test -- --run` to verify tests pass
+4. Run `yarn test --run` to verify tests pass
 5. Open a PR with a clear description of what changed and why
 
 ## Private Apps

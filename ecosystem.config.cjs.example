@@ -16,8 +16,11 @@ module.exports = {
       exec_mode: 'fork',
       autorestart: true,
       watch: false,
-      max_memory_restart: '512M',
+      max_memory_restart: '2G',
       restart_delay: 3000,
+      max_restarts: 10,          // stop after 10 consecutive crashes (prevents infinite loop)
+      min_uptime: '5s',          // must run 5s to count as "started" (resets restart counter)
+      kill_timeout: 5000,        // wait 5s for old process to exit before SIGKILL
       env: {
         NODE_ENV: 'production',
         PORT: process.env.PORT || '48291',

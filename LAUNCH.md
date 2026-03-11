@@ -59,12 +59,12 @@ MYWAY_BASE_DOMAIN=myway.sh                   # Subdomain-based tenant binding (e
 1. **Clone and install:**
    ```bash
    git clone <repo> myway && cd myway
-   npm install
+   yarn install
    ```
 
 2. **Build:**
    ```bash
-   npm run build
+   yarn build
    ```
 
 3. **Set up data directory:**
@@ -75,9 +75,10 @@ MYWAY_BASE_DOMAIN=myway.sh                   # Subdomain-based tenant binding (e
 
 4. **Start:**
    ```bash
-   npm start
+   yarn start
    # Or with PM2:
-   pm2 start npm --name myway -- start
+   cp ecosystem.config.cjs.example ecosystem.config.cjs
+   pm2 start ecosystem.config.cjs
    ```
 
 5. **Verify:**
@@ -183,7 +184,7 @@ done
 ### Deployment
 
 ```bash
-npm run build
+yarn build
 npx wrangler pages deploy .vercel/output/static
 ```
 

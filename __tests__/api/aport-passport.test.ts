@@ -5,7 +5,7 @@
  * before each test so getAportConfig() picks up the new value. No mocking
  * framework needed -- the config module was designed for this (see config.ts).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdirSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -22,9 +22,12 @@ function makeReq(): NextRequest {
 beforeEach(() => {
   mkdirSync(tmpDir, { recursive: true })
   _resetConfigCache()
+  // Stub global fetch so tests never hit external APIs (e.g. api.aport.io/api/verify)
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 404 })))
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
   delete process.env.APORT_PASSPORT_FILE
   _resetConfigCache()

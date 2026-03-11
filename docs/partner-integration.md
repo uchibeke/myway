@@ -71,7 +71,7 @@ The partner ID is derived from the env var name: `MYWAY_PARTNER_YOURPLATFORM_SEC
 ### 3. Restart Myway
 
 ```bash
-npm run build && pm2 restart myway
+yarn build && pm2 restart myway
 ```
 
 That's it on the Myway side. Setting the partner secret automatically:

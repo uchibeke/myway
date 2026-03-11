@@ -2,17 +2,34 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Myway — Interactive Setup
+# Myway — Setup CLI
 #
-# Usage:
+# Usage (interactive):
 #   npx @uchibeke/myway              # scaffold in ./myway
 #   npx @uchibeke/myway my-app       # scaffold in ./my-app
 #   npx @uchibeke/myway --setup      # configure existing install (run from myway dir)
 #
+# Usage (non-interactive — for agents/CI):
+#   npx @uchibeke/myway my-app \
+#     --ai-mode byok \
+#     --ai-url https://api.openai.com/v1 \
+#     --ai-key sk-... \
+#     --ai-model gpt-4o \
+#     --root ~/vault \
+#     --port 48291 \
+#     --no-aport \
+#     --start
+#
+#   npx @uchibeke/myway my-app \
+#     --ai-mode openclaw \
+#     --openclaw-url http://localhost:18789 \
+#     --root ~/Documents \
+#     --start
+#
 # What it does:
 #   1. Scaffolds a new Myway directory (or configures an existing one)
 #   2. Installs dependencies
-#   3. Prompts for required configuration
+#   3. Prompts for (or accepts) configuration
 #   4. Generates secrets
 #   5. Initializes the database
 #   6. Builds for production
@@ -40,25 +57,94 @@ SETUP_ONLY=false
 TARGET_DIR=""
 START_AFTER=false
 
-for arg in "$@"; do
-  case "$arg" in
-    --setup)  SETUP_ONLY=true ;;
-    --start)  START_AFTER=true ;;
+# ── Non-interactive flags (all optional — if set, skip corresponding prompt) ─
+FLAG_AI_MODE=""          # openclaw | byok
+FLAG_AI_URL=""           # BYOK: API base URL
+FLAG_AI_KEY=""           # BYOK: API key
+FLAG_AI_MODEL=""         # BYOK: model name
+FLAG_OPENCLAW_URL=""     # OpenClaw: gateway URL
+FLAG_OPENCLAW_TOKEN=""   # OpenClaw: gateway token
+FLAG_ROOT=""             # MYWAY_ROOT directory
+FLAG_PORT=""             # server port
+FLAG_NO_APORT=false      # skip APort prompt
+
+# Helper: is non-interactive mode? (true if --ai-mode was passed)
+is_noninteractive() { [[ -n "$FLAG_AI_MODE" ]]; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --setup)         SETUP_ONLY=true ;;
+    --start)         START_AFTER=true ;;
+    --ai-mode)       FLAG_AI_MODE="${2:?--ai-mode requires a value (openclaw or byok)}"; shift ;;
+    --ai-url)        FLAG_AI_URL="${2:?--ai-url requires a value}"; shift ;;
+    --ai-key)        FLAG_AI_KEY="${2:-}"; shift ;;
+    --ai-model)      FLAG_AI_MODEL="${2:-}"; shift ;;
+    --openclaw-url)  FLAG_OPENCLAW_URL="${2:?--openclaw-url requires a value}"; shift ;;
+    --openclaw-token) FLAG_OPENCLAW_TOKEN="${2:-}"; shift ;;
+    --root)          FLAG_ROOT="${2:?--root requires a value}"; shift ;;
+    --port)          FLAG_PORT="${2:?--port requires a value}"; shift ;;
+    --no-aport)      FLAG_NO_APORT=true ;;
     --help|-h)
-      echo "Usage: npx @uchibeke/myway [directory] [--setup] [--start]"
+      echo "Usage: npx @uchibeke/myway [directory] [options]"
       echo ""
-      echo "  directory    Create Myway in this directory (default: ./myway)"
-      echo "  --setup      Configure an existing Myway install (skip scaffold)"
-      echo "  --start      Start the server after setup"
+      echo "  directory              Create Myway in this directory (default: ./myway)"
+      echo "  --setup                Configure an existing Myway install (skip scaffold)"
+      echo "  --start                Start the server after setup"
       echo ""
-      echo "Required: Node.js 22+, AI backend (OpenClaw or any OpenAI-compatible API)"
+      echo "Non-interactive options (for agents/CI):"
+      echo "  --ai-mode <mode>       openclaw or byok (required for non-interactive)"
+      echo "  --ai-url <url>         BYOK: AI provider base URL"
+      echo "  --ai-key <key>         BYOK: API key (omit for Ollama)"
+      echo "  --ai-model <model>     BYOK: model name (optional)"
+      echo "  --openclaw-url <url>   OpenClaw: gateway URL (default: http://localhost:18789)"
+      echo "  --openclaw-token <tok> OpenClaw: gateway token (optional)"
+      echo "  --root <path>          Directory for file browser (default: ~/vault)"
+      echo "  --port <port>          Server port (default: 48291)"
+      echo "  --no-aport             Skip APort guardrails setup"
+      echo ""
+      echo "Required: Node.js 22+, yarn"
       echo "Optional: APort agent guardrails (npx @aporthq/aport-agent-guardrails)"
       exit 0
       ;;
-    -*) log_error "Unknown flag: $arg"; exit 1 ;;
-    *)  TARGET_DIR="$arg" ;;
+    -*)  log_error "Unknown flag: $1"; exit 1 ;;
+    *)   TARGET_DIR="$1" ;;
   esac
+  shift
 done
+
+# ─── Validate flags early (before slow operations) ────────────────────────
+
+if [[ -n "$FLAG_AI_MODE" && "$FLAG_AI_MODE" != "openclaw" && "$FLAG_AI_MODE" != "byok" ]]; then
+  log_error "--ai-mode must be 'openclaw' or 'byok' (got: $FLAG_AI_MODE)"
+  exit 1
+fi
+
+if [[ "$FLAG_AI_MODE" == "byok" && -z "$FLAG_AI_URL" ]]; then
+  log_error "--ai-url is required when --ai-mode is byok"
+  exit 1
+fi
+
+# Validate --port is a number in valid range
+if [[ -n "$FLAG_PORT" ]]; then
+  if ! [[ "$FLAG_PORT" =~ ^[0-9]+$ ]]; then
+    log_error "--port must be a number (got: $FLAG_PORT)"
+    exit 1
+  fi
+  if (( FLAG_PORT < 1 || FLAG_PORT > 65535 )); then
+    log_error "--port must be between 1 and 65535 (got: $FLAG_PORT)"
+    exit 1
+  fi
+fi
+
+# Validate URL flags have a scheme
+if [[ -n "$FLAG_AI_URL" && ! "$FLAG_AI_URL" =~ ^https?:// ]]; then
+  log_error "--ai-url must start with http:// or https:// (got: $FLAG_AI_URL)"
+  exit 1
+fi
+if [[ -n "$FLAG_OPENCLAW_URL" && ! "$FLAG_OPENCLAW_URL" =~ ^https?:// ]]; then
+  log_error "--openclaw-url must start with http:// or https:// (got: $FLAG_OPENCLAW_URL)"
+  exit 1
+fi
 
 # ─── Banner ─────────────────────────────────────────────────────────────────
 
@@ -100,7 +186,11 @@ elif is_myway_dir "."; then
   WORK_DIR="$(pwd)"
   log_info "Detected existing Myway installation"
 elif [[ -n "$TARGET_DIR" ]]; then
-  WORK_DIR="$(pwd)/$TARGET_DIR"
+  if [[ "$TARGET_DIR" == /* ]]; then
+    WORK_DIR="$TARGET_DIR"
+  else
+    WORK_DIR="$(pwd)/$TARGET_DIR"
+  fi
 else
   WORK_DIR="$(pwd)/myway"
 fi
@@ -157,11 +247,21 @@ fi
 
 ENV_FILE="$WORK_DIR/.env.local"
 NEEDS_CONFIG=true
+PORT="48291"  # default — overridden by config below or existing .env.local
 
 if [[ -f "$ENV_FILE" ]]; then
-  log_info "Found existing .env.local"
-  if ! prompt_yn "Reconfigure environment variables?"; then
-    NEEDS_CONFIG=false
+  # Read PORT from existing .env.local so server start works even if user skips reconfigure
+  EXISTING_PORT="$(grep -E '^PORT=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2)"
+  if [[ -n "$EXISTING_PORT" ]]; then
+    PORT="$EXISTING_PORT"
+  fi
+  if is_noninteractive; then
+    log_info "Overwriting existing .env.local (non-interactive mode)"
+  else
+    log_info "Found existing .env.local"
+    if ! prompt_yn "Reconfigure environment variables?"; then
+      NEEDS_CONFIG=false
+    fi
   fi
 fi
 
@@ -169,38 +269,32 @@ if $NEEDS_CONFIG; then
   log_step "Configuration"
 
   # ── Files app: MYWAY_ROOT ───────────────────────────────────────────────
-  echo ""
-  echo -e "  ${BOLD}Files App${RESET}"
-  echo -e "  ${DIM}Myway includes a file browser. Choose a directory on this machine${RESET}"
-  echo -e "  ${DIM}that Myway can read and manage (notes, documents, etc.).${RESET}"
-  echo ""
   DEFAULT_ROOT="${HOME}/vault"
-  prompt_value "Directory path" "$DEFAULT_ROOT"
-  MYWAY_ROOT="$REPLY"
+  if [[ -n "$FLAG_ROOT" ]]; then
+    MYWAY_ROOT="$FLAG_ROOT"
+  elif is_noninteractive; then
+    MYWAY_ROOT="$DEFAULT_ROOT"
+  else
+    echo ""
+    echo -e "  ${BOLD}Files App${RESET}"
+    echo -e "  ${DIM}Myway includes a file browser. Choose a directory on this machine${RESET}"
+    echo -e "  ${DIM}that Myway can read and manage (notes, documents, etc.).${RESET}"
+    echo ""
+    prompt_value "Directory path" "$DEFAULT_ROOT"
+    MYWAY_ROOT="$REPLY"
+  fi
 
   # Expand ~ to $HOME
   MYWAY_ROOT="${MYWAY_ROOT/#\~/$HOME}"
 
   if [[ ! -d "$MYWAY_ROOT" ]]; then
-    if prompt_yn "Directory $MYWAY_ROOT doesn't exist. Create it?" "y"; then
+    if is_noninteractive || prompt_yn "Directory $MYWAY_ROOT doesn't exist. Create it?" "y"; then
       mkdir -p "$MYWAY_ROOT"
       log_info "Created $MYWAY_ROOT"
     fi
   fi
 
   # ── AI Backend selection ────────────────────────────────────────────────
-  echo ""
-  echo -e "  ${BOLD}AI Backend${RESET}"
-  echo -e "  ${DIM}Myway needs an AI model to power conversations, briefings, and tasks.${RESET}"
-  echo -e "  ${DIM}Choose how to connect to one:${RESET}"
-  echo ""
-  echo -e "  ${CYAN}1${RESET}) OpenClaw — local AI gateway (if you have OpenClaw installed)"
-  echo -e "  ${CYAN}2${RESET}) BYOK — Bring Your Own Key (OpenAI, OpenRouter, Ollama, Gemini, etc.)"
-  echo ""
-  echo -en "  Choose [1/2]: "
-  read -r AI_CHOICE
-  AI_CHOICE="${AI_CHOICE:-1}"
-
   AI_MODE="openclaw"
   OPENCLAW_BASE_URL=""
   OPENCLAW_GATEWAY_TOKEN=""
@@ -208,115 +302,160 @@ if $NEEDS_CONFIG; then
   MYWAY_AI_TOKEN=""
   MYWAY_AI_MODEL=""
 
-  if [[ "$AI_CHOICE" == "2" ]]; then
-    AI_MODE="byok"
-    echo ""
-    echo -e "  ${DIM}Enter your AI provider's OpenAI-compatible base URL.${RESET}"
-    echo -e "  ${DIM}Examples:${RESET}"
-    echo -e "  ${DIM}  Ollama (local):  http://localhost:11434/v1${RESET}"
-    echo -e "  ${DIM}  OpenAI:          https://api.openai.com/v1${RESET}"
-    echo -e "  ${DIM}  Gemini:          https://generativelanguage.googleapis.com/v1beta/openai${RESET}"
-    echo -e "  ${DIM}  OpenRouter:      https://openrouter.ai/api/v1${RESET}"
-    echo -e "  ${DIM}  Together:        https://api.together.xyz/v1${RESET}"
-    echo ""
-    prompt_value "API base URL" ""
-    MYWAY_AI_BASE_URL="$REPLY"
-
-    if [[ -z "$MYWAY_AI_BASE_URL" ]]; then
-      log_error "Base URL is required for BYOK mode."
-      exit 1
+  if [[ -n "$FLAG_AI_MODE" ]]; then
+    # Non-interactive: use flags directly
+    AI_MODE="$FLAG_AI_MODE"
+    if [[ "$AI_MODE" == "byok" ]]; then
+      MYWAY_AI_BASE_URL="$FLAG_AI_URL"
+      MYWAY_AI_TOKEN="$FLAG_AI_KEY"
+      MYWAY_AI_MODEL="$FLAG_AI_MODEL"
+    else
+      OPENCLAW_BASE_URL="${FLAG_OPENCLAW_URL:-http://localhost:18789}"
+      OPENCLAW_GATEWAY_TOKEN="$FLAG_OPENCLAW_TOKEN"
     fi
-
-    echo ""
-    echo -e "  ${DIM}Your API key from the provider above. Leave blank for Ollama (no key needed).${RESET}"
-    prompt_value "API key" ""
-    MYWAY_AI_TOKEN="$REPLY"
-
-    echo ""
-    echo -e "  ${DIM}Which model to use (e.g. gpt-4o, gemini-2.0-flash, llama3). Leave blank for provider default.${RESET}"
-    prompt_value "Model (optional)" ""
-    MYWAY_AI_MODEL="$REPLY"
+    log_info "AI backend: $AI_MODE"
   else
-    # OpenClaw mode
+    # Interactive: prompt user
     echo ""
-    echo -e "  ${DIM}URL where your OpenClaw gateway is running.${RESET}"
-    DEFAULT_OC_URL="http://localhost:18789"
-    prompt_value "OpenClaw gateway URL" "$DEFAULT_OC_URL"
-    OPENCLAW_BASE_URL="$REPLY"
+    echo -e "  ${BOLD}AI Backend${RESET}"
+    echo -e "  ${DIM}Myway needs an AI model to power conversations, briefings, and tasks.${RESET}"
+    echo -e "  ${DIM}Choose how to connect to one:${RESET}"
+    echo ""
+    echo -e "  ${CYAN}1${RESET}) OpenClaw — local AI gateway (if you have OpenClaw installed)"
+    echo -e "  ${CYAN}2${RESET}) BYOK — Bring Your Own Key (OpenAI, OpenRouter, Ollama, Gemini, etc.)"
+    echo ""
+    echo -en "  Choose [1/2]: "
+    read -r AI_CHOICE
+    AI_CHOICE="${AI_CHOICE:-1}"
 
-    echo ""
-    echo -e "  ${DIM}If your gateway requires auth, enter the token. Leave blank if running${RESET}"
-    echo -e "  ${DIM}on loopback (localhost) without auth — most local setups don't need one.${RESET}"
-    prompt_value "OpenClaw gateway token (optional)" ""
-    OPENCLAW_GATEWAY_TOKEN="$REPLY"
+    if [[ "$AI_CHOICE" == "2" ]]; then
+      AI_MODE="byok"
+      echo ""
+      echo -e "  ${DIM}Enter your AI provider's OpenAI-compatible base URL.${RESET}"
+      echo -e "  ${DIM}Examples:${RESET}"
+      echo -e "  ${DIM}  Ollama (local):  http://localhost:11434/v1${RESET}"
+      echo -e "  ${DIM}  OpenAI:          https://api.openai.com/v1${RESET}"
+      echo -e "  ${DIM}  Gemini:          https://generativelanguage.googleapis.com/v1beta/openai${RESET}"
+      echo -e "  ${DIM}  OpenRouter:      https://openrouter.ai/api/v1${RESET}"
+      echo -e "  ${DIM}  Together:        https://api.together.xyz/v1${RESET}"
+      echo ""
+      prompt_value "API base URL" ""
+      MYWAY_AI_BASE_URL="$REPLY"
+
+      if [[ -z "$MYWAY_AI_BASE_URL" ]]; then
+        log_error "Base URL is required for BYOK mode."
+        exit 1
+      fi
+
+      echo ""
+      echo -e "  ${DIM}Your API key from the provider above. Leave blank for Ollama (no key needed).${RESET}"
+      prompt_value "API key" ""
+      MYWAY_AI_TOKEN="$REPLY"
+
+      echo ""
+      echo -e "  ${DIM}Which model to use (e.g. gpt-4o, gemini-2.0-flash, llama3). Leave blank for provider default.${RESET}"
+      prompt_value "Model (optional)" ""
+      MYWAY_AI_MODEL="$REPLY"
+    else
+      # OpenClaw mode
+      echo ""
+      echo -e "  ${DIM}URL where your OpenClaw gateway is running.${RESET}"
+      DEFAULT_OC_URL="http://localhost:18789"
+      prompt_value "OpenClaw gateway URL" "$DEFAULT_OC_URL"
+      OPENCLAW_BASE_URL="$REPLY"
+
+      echo ""
+      echo -e "  ${DIM}If your gateway requires auth, enter the token. Leave blank if running${RESET}"
+      echo -e "  ${DIM}on loopback (localhost) without auth — most local setups don't need one.${RESET}"
+      prompt_value "OpenClaw gateway token (optional)" ""
+      OPENCLAW_GATEWAY_TOKEN="$REPLY"
+    fi
   fi
 
   # ── Auto-generated: MYWAY_SECRET ──────────────────────────────────────
   MYWAY_SECRET="$(generate_hex 32)"
   log_info "Generated encryption key (stored in .env.local)"
 
-  # ── Optional: PORT ─────────────────────────────────────────────────────
-  echo ""
-  echo -e "  ${BOLD}Server${RESET}"
-  echo -e "  ${DIM}Which port should Myway run on?${RESET}"
-  prompt_value "Port" "48291"
-  PORT="$REPLY"
+  # ── Port ─────────────────────────────────────────────────────────────
+  if [[ -n "$FLAG_PORT" ]]; then
+    PORT="$FLAG_PORT"
+  elif is_noninteractive; then
+    PORT="48291"
+  else
+    echo ""
+    echo -e "  ${BOLD}Server${RESET}"
+    echo -e "  ${DIM}Which port should Myway run on?${RESET}"
+    prompt_value "Port" "48291"
+    PORT="$REPLY"
+  fi
+
+  # Validate PORT (covers both interactive and flag-provided values)
+  if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
+    log_error "Invalid port: $PORT (must be 1–65535)"
+    exit 1
+  fi
 
   # ── Write .env.local ───────────────────────────────────────────────────
   log_step "Writing .env.local"
 
-  cat > "$ENV_FILE" <<ENVEOF
+  # Helper: write a key=value pair with double-quoted value.
+  # dotenv 16.x double-quote rules:
+  #   - \" recognized by regex (prevents premature end), kept as literal \"
+  #   - \n → newline, \r → CR (only these two are unescaped)
+  #   - \$ prevents dotenv-expand variable interpolation → becomes literal $
+  #   - All other \ are kept literally
+  # We escape: " (prevents breaking the quote) and $ (prevents expansion).
+  env_write() {
+    local key="$1" val="$2"
+    val="${val//\"/\\\"}"   # " → \"  (prevents premature close of double-quoted value)
+    val="${val//\$/\\\$}"   # $ → \$  (prevents dotenv-expand interpolation)
+    echo "${key}=\"${val}\"" >> "$ENV_FILE"
+  }
+
+  cat > "$ENV_FILE" <<'ENVEOF'
 # ─────────────────────────────────────────────────────────────────────────────
 # Myway — Generated by setup wizard
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Server
-PORT=${PORT}
 ENVEOF
+  env_write PORT "$PORT"
 
-  cat >> "$ENV_FILE" <<ENVEOF
-
-# ── File System
-MYWAY_ROOT=${MYWAY_ROOT}
-ENVEOF
+  echo "" >> "$ENV_FILE"
+  echo "# ── File System" >> "$ENV_FILE"
+  env_write MYWAY_ROOT "$MYWAY_ROOT"
 
   if [[ "$AI_MODE" == "byok" ]]; then
-    cat >> "$ENV_FILE" <<ENVEOF
-
-# ── AI Backend (BYOK — Bring Your Own Key)
-MYWAY_AI_BASE_URL=${MYWAY_AI_BASE_URL}
-ENVEOF
+    echo "" >> "$ENV_FILE"
+    echo "# ── AI Backend (BYOK — Bring Your Own Key)" >> "$ENV_FILE"
+    env_write MYWAY_AI_BASE_URL "$MYWAY_AI_BASE_URL"
     if [[ -n "$MYWAY_AI_TOKEN" ]]; then
-      echo "MYWAY_AI_TOKEN=${MYWAY_AI_TOKEN}" >> "$ENV_FILE"
+      env_write MYWAY_AI_TOKEN "$MYWAY_AI_TOKEN"
     else
       echo "# MYWAY_AI_TOKEN=  # not needed for Ollama" >> "$ENV_FILE"
     fi
     if [[ -n "$MYWAY_AI_MODEL" ]]; then
-      echo "MYWAY_AI_MODEL=${MYWAY_AI_MODEL}" >> "$ENV_FILE"
+      env_write MYWAY_AI_MODEL "$MYWAY_AI_MODEL"
     else
       echo "# MYWAY_AI_MODEL=  # optional — uses provider default" >> "$ENV_FILE"
     fi
   else
-    cat >> "$ENV_FILE" <<ENVEOF
-
-# ── OpenClaw Integration
-OPENCLAW_BASE_URL=${OPENCLAW_BASE_URL}
-ENVEOF
+    echo "" >> "$ENV_FILE"
+    echo "# ── OpenClaw Integration" >> "$ENV_FILE"
+    env_write OPENCLAW_BASE_URL "$OPENCLAW_BASE_URL"
     if [[ -n "$OPENCLAW_GATEWAY_TOKEN" ]]; then
-      echo "OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}" >> "$ENV_FILE"
+      env_write OPENCLAW_GATEWAY_TOKEN "$OPENCLAW_GATEWAY_TOKEN"
     else
       echo "# OPENCLAW_GATEWAY_TOKEN=  # set if your gateway requires auth" >> "$ENV_FILE"
     fi
   fi
 
-  cat >> "$ENV_FILE" <<ENVEOF
-
-# ── Encryption (auto-generated — do not share)
-MYWAY_SECRET=${MYWAY_SECRET}
-
-# ── See .env.local.example for all available options:
-#    Google OAuth, Telegram, TTS providers, APort guardrails, etc.
-ENVEOF
+  echo "" >> "$ENV_FILE"
+  echo "# ── Encryption (auto-generated — do not share)" >> "$ENV_FILE"
+  env_write MYWAY_SECRET "$MYWAY_SECRET"
+  echo "" >> "$ENV_FILE"
+  echo "# ── See .env.local.example for all available options:" >> "$ENV_FILE"
+  echo "#    Google OAuth, Telegram, TTS providers, APort guardrails, etc." >> "$ENV_FILE"
 
   chmod 600 "$ENV_FILE"
   log_info ".env.local written (permissions: 600)"
@@ -336,42 +475,128 @@ log_info "Build complete"
 
 # ─── APort guardrails (optional) ───────────────────────────────────────────
 
-echo ""
-if prompt_yn "Set up APort agent guardrails? (recommended)" "y"; then
+if $FLAG_NO_APORT; then
+  log_info "Skipping APort guardrails (--no-aport)"
+elif is_noninteractive; then
   log_step "Running APort setup..."
   npx @aporthq/aport-agent-guardrails || {
     log_warn "APort setup skipped or failed. You can run it later:"
     log_dim "npx @aporthq/aport-agent-guardrails"
   }
+else
+  echo ""
+  if prompt_yn "Set up APort agent guardrails? (recommended)" "y"; then
+    log_step "Running APort setup..."
+    npx @aporthq/aport-agent-guardrails || {
+      log_warn "APort setup skipped or failed. You can run it later:"
+      log_dim "npx @aporthq/aport-agent-guardrails"
+    }
+  fi
 fi
 
+# ─── Open browser helper ──────────────────────────────────────────────────
+
+open_browser() {
+  local url="$1"
+  if command -v xdg-open &>/dev/null; then
+    xdg-open "$url" 2>/dev/null &
+  elif command -v open &>/dev/null; then
+    open "$url" 2>/dev/null &
+  elif command -v wslview &>/dev/null; then
+    wslview "$url" 2>/dev/null &
+  fi
+}
+
+wait_and_open() {
+  local url="$1" max_wait=30 waited=0
+  log_dim "Waiting for server to be ready..."
+  while (( waited < max_wait )); do
+    if curl -s -o /dev/null -w '' "$url" 2>/dev/null; then
+      echo ""
+      log_info "Myway is live at ${CYAN}${url}${RESET}"
+      echo ""
+      echo -e "  ${BOLD}Opening in your browser...${RESET}"
+      echo ""
+      open_browser "$url"
+      return 0
+    fi
+    sleep 1
+    (( waited++ ))
+  done
+  echo ""
+  log_info "Server started. Open ${CYAN}${url}${RESET} in your browser."
+  echo ""
+}
+
 # ─── Start server ───────────────────────────────────────────────────────────
+
+MYWAY_URL="http://localhost:${PORT}"
 
 echo ""
 echo -e "${BOLD}  ┌─────────────────────────────────────────┐${RESET}"
 echo -e "${BOLD}  │           Setup complete!                │${RESET}"
 echo -e "${BOLD}  └─────────────────────────────────────────┘${RESET}"
 echo ""
-log_info "Myway is ready at ${CYAN}http://localhost:${PORT}${RESET}"
-echo ""
 
+# Decide whether to start: --start flag, or ask in interactive mode
+SHOULD_START=false
 if $START_AFTER; then
-  log_step "Starting Myway..."
-  exec yarn start
+  SHOULD_START=true
+elif ! is_noninteractive; then
+  if prompt_yn "Start Myway now?" "y"; then
+    SHOULD_START=true
+  fi
 fi
 
-echo -e "  ${BOLD}Next steps:${RESET}"
-echo ""
-echo -e "  ${CYAN}cd $(basename "$WORK_DIR")${RESET}"
-echo -e "  ${CYAN}yarn start${RESET}                       # start the server"
-echo ""
-echo -e "  ${DIM}Or with PM2 (process manager):${RESET}"
-echo -e "  ${CYAN}cp ecosystem.config.cjs.example ecosystem.config.cjs${RESET}"
-echo -e "  ${CYAN}pm2 start ecosystem.config.cjs${RESET}"
-echo ""
-echo -e "  ${DIM}Optional integrations:${RESET}"
-echo -e "  ${DIM}  Google Calendar/Gmail — add GOOGLE_CLIENT_ID + SECRET to .env.local${RESET}"
-echo -e "  ${DIM}  Telegram delivery    — add TELEGRAM_BOT_TOKEN to .env.local${RESET}"
-echo -e "  ${DIM}  TTS voice output     — add LMNT/ElevenLabs API keys to .env.local${RESET}"
-echo -e "  ${DIM}  See .env.local.example for all options${RESET}"
-echo ""
+if $SHOULD_START; then
+  log_step "Starting Myway..."
+  # Start in background, wait for ready, then open browser
+  PORT=${PORT} yarn start &
+  SERVER_PID=$!
+
+  # Clean up backgrounded server on Ctrl+C / SIGTERM
+  cleanup() {
+    echo ""
+    log_info "Stopping Myway (pid ${SERVER_PID})..."
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+    exit 0
+  }
+  trap cleanup INT TERM
+
+  wait_and_open "$MYWAY_URL"
+
+  echo -e "  ${DIM}Server running (pid ${SERVER_PID}). Press Ctrl+C to stop.${RESET}"
+  echo ""
+  echo -e "  ${DIM}To run in the background next time:${RESET}"
+  echo -e "  ${CYAN}cp ecosystem.config.cjs.example ecosystem.config.cjs${RESET}"
+  echo -e "  ${CYAN}pm2 start ecosystem.config.cjs${RESET}"
+  echo ""
+  echo -e "  ${DIM}Optional integrations:${RESET}"
+  echo -e "  ${DIM}  Google Calendar/Gmail — add GOOGLE_CLIENT_ID + SECRET to .env.local${RESET}"
+  echo -e "  ${DIM}  Telegram delivery    — add TELEGRAM_BOT_TOKEN to .env.local${RESET}"
+  echo -e "  ${DIM}  TTS voice output     — add LMNT/ElevenLabs API keys to .env.local${RESET}"
+  echo -e "  ${DIM}  See .env.local.example for all options${RESET}"
+  echo ""
+
+  # Wait for server process so Ctrl+C works
+  wait $SERVER_PID 2>/dev/null
+else
+  log_info "Myway is ready at ${CYAN}${MYWAY_URL}${RESET}"
+  echo ""
+  echo -e "  ${BOLD}To start:${RESET}"
+  echo ""
+  echo -e "  ${CYAN}cd $(basename "$WORK_DIR")${RESET}"
+  echo -e "  ${CYAN}yarn start${RESET}"
+  echo ""
+  echo -e "  ${DIM}Or with PM2 (process manager):${RESET}"
+  echo -e "  ${CYAN}cp ecosystem.config.cjs.example ecosystem.config.cjs${RESET}"
+  echo -e "  ${CYAN}pm2 start ecosystem.config.cjs${RESET}"
+  echo ""
+  echo -e "  ${DIM}Optional integrations:${RESET}"
+  echo -e "  ${DIM}  Google Calendar/Gmail — add GOOGLE_CLIENT_ID + SECRET to .env.local${RESET}"
+  echo -e "  ${DIM}  Telegram delivery    — add TELEGRAM_BOT_TOKEN to .env.local${RESET}"
+  echo -e "  ${DIM}  TTS voice output     — add LMNT/ElevenLabs API keys to .env.local${RESET}"
+  echo -e "  ${DIM}  See .env.local.example for all options${RESET}"
+  echo ""
+fi

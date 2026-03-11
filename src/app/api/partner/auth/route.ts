@@ -22,6 +22,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Reject excessively large tokens (partner tokens should be <2KB)
+    if (token.length > 4096) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid token', errorCode: 'INVALID_TOKEN' },
+        { status: 400 },
+      )
+    }
+
     // Get referer/origin for domain validation
     const referer = request.headers.get('referer') || request.headers.get('origin') || undefined
 
@@ -51,7 +59,8 @@ export async function POST(request: NextRequest) {
       partnerId,
       expiresAt: sessionExp,
     })
-  } catch {
+  } catch (err) {
+    console.error('[partner/auth] Token exchange failed:', err)
     return NextResponse.json(
       { success: false, error: 'Internal error', errorCode: 'INTERNAL_ERROR' },
       { status: 500 },

@@ -6,13 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-03-11
+
 ### Added
 
+- **Non-interactive CLI** — `npx @uchibeke/myway` now supports flags (`--ai-mode`, `--ai-url`, `--ai-key`, `--ai-model`, `--openclaw-url`, `--root`, `--port`, `--no-aport`) for fully automated setup by agents and CI. Early validation catches bad inputs before slow operations.
+- **Auto-start and browser open** — interactive setup now asks "Start Myway now?" and auto-opens the browser when the server is ready. `--start` flag for non-interactive mode.
+- **Agent Skills (SKILL.md)** — two skills following the Agent Skills standard: `myway-byok` and `myway-openclaw`, enabling setup via any of 40+ AI agents (Claude Code, Cursor, Copilot, Gemini CLI, etc.) through [skills.sh](https://skills.sh).
+- **PM2 crash loop protection** — `ecosystem.config.cjs` now includes `max_restarts: 10`, `min_uptime: '5s'`, and `kill_timeout: 5000` to prevent infinite restart loops.
 - **Partner authentication** — HMAC-signed token exchange for embedding Myway in partner platforms via iframe. Partners generate tokens with a shared secret; Myway validates and issues 15-minute session tokens. Env-var-driven: add `MYWAY_PARTNER_<ID>_SECRET` to onboard a partner with zero code changes.
 - **Multi-tenant auth enforcement** — when any partner is configured, all API routes require valid session or API tokens. External `X-Myway-User-Id` headers are stripped to prevent spoofing.
 - **Auto CORS/CSP merge** — partner domains from `MYWAY_PARTNER_<ID>_DOMAINS` are automatically added to CORS and CSP frame-ancestors.
 - **Partner integration guide** — [docs/partner-integration.md](docs/partner-integration.md) with code examples in Node.js, Python, and Go.
 - **Token generation script** — `scripts/generate-partner-token.ts` for testing partner auth flows.
+
+### Security
+
+- CLI now double-quotes all `.env.local` values to prevent `#` comment truncation and `$` variable expansion
+- CLI validates port (numeric, 1–65535) and URL flags (`http://`/`https://` required) before any slow operations
+- Partner auth error messages no longer reveal whether a partner ID exists (prevents enumeration)
+- Partner auth endpoint rejects tokens larger than 4KB
+- Partner auth errors are now logged server-side for operational visibility
+- Signal trap added for clean server shutdown when using `--start`
 
 ## [0.1.0] — 2026-03-02
 

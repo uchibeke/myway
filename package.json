@@ -1,6 +1,6 @@
 {
   "name": "@uchibeke/myway",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Self-hosted personal AI app with agent guardrails — tasks, briefings, file browser, and a live feed of every action your AI takes.",
   "license": "MIT",
   "repository": {
@@ -22,6 +22,7 @@
   },
   "files": [
     "bin/",
+    "skills/",
     "src/",
     "public/",
     "scripts/",

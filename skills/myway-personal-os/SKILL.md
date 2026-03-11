@@ -1,18 +1,16 @@
 ---
-name: myway-openclaw
+name: myway-personal-os
 description: >
   Set up Myway, a self-hosted personal AI home screen, using OpenClaw as the AI backend.
   Use this skill when the user wants to install Myway with OpenClaw, configure their personal
   dashboard, or troubleshoot a Myway + OpenClaw setup. Requires Node.js 22+ and yarn.
-license: MIT
-compatibility: Linux, macOS. Requires Node.js 22+, yarn, and OpenClaw installed locally.
 metadata:
   author: uchibeke
-  version: 0.1.0
+  version: 0.2.0
   tags: personal-ai, home-screen, self-hosted, openclaw, dashboard
 ---
 
-# Myway + OpenClaw Setup
+# Myway Personal OS — OpenClaw Setup
 
 Myway is a self-hosted personal AI home screen — a local-first PWA that gives you a
 phone-style dashboard powered by AI. This skill sets it up using **OpenClaw** as the

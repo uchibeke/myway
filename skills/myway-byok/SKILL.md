@@ -4,11 +4,9 @@ description: >
   Set up Myway, a self-hosted personal AI home screen, using your own AI API key (BYOK).
   Use this skill when the user wants to install Myway with OpenAI, Gemini, Ollama, OpenRouter,
   Together AI, or any OpenAI-compatible provider. Requires Node.js 22+ and yarn.
-license: MIT
-compatibility: Linux, macOS. Requires Node.js 22+, yarn, and an AI API key or local Ollama.
 metadata:
   author: uchibeke
-  version: 0.1.0
+  version: 0.2.0
   tags: personal-ai, home-screen, self-hosted, byok, openai, gemini, ollama, dashboard
 ---
 

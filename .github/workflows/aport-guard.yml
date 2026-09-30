@@ -1,6 +1,10 @@
 # APort Repository Guard
-# APort AI agent passport guardrails for GitHub.
+# Report-only demonstration installation for the 2026-09-30 launch package.
 # Docs: https://aport.io/quickstart/github
+#
+# This file lives on an isolated demonstration base branch. It is pinned to the
+# full commit SHA of the current release, which GitHub's workflow syntax
+# reference calls the safest way to reference an action.
 
 name: APort Repository Guard
 on:
@@ -20,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: aporthq/policy-verify-action@v1.0.2
+      - uses: aporthq/policy-verify-action@349359985993ab02045fe0032b432173a4dc6666 # v1.0.13
         with:
-          protected-paths: ".github/workflows/**,.aport/**,package.json"
+          mode: auto
+          protected-paths: "docs/aport-deny-test.txt"
